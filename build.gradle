@@ -1,0 +1,109 @@
+buildscript {
+  repositories {
+    mavenLocal()
+    mavenCentral()
+    google()
+  }
+  dependencies {
+    classpath 'com.guardsquare:proguard-gradle:7.4.1'
+  }
+}
+
+plugins {
+  id 'java'
+  id 'application'
+  id 'org.javamodularity.moduleplugin' version '1.8.12'
+  id 'org.openjfx.javafxplugin' version '0.0.13'
+  id 'org.beryx.jlink' version '2.25.0'
+}
+
+group 'com.example'
+version '1.0-SNAPSHOT'
+
+repositories {
+  mavenCentral()
+}
+
+ext {
+  junitVersion = '5.10.0'
+}
+
+sourceCompatibility = '21'
+targetCompatibility = '21'
+
+project.version = '0.1'
+
+def proguardOutput = "build/proguard/jar/${project.name}-${project.version}.jar"
+def proguardEnabled = true
+
+def dependsDir = "${buildDir}/libs/dependencies/"
+
+tasks.withType(JavaCompile) {
+  options.encoding = 'UTF-8'
+}
+
+application {
+  mainModule = 'com.example.proguardexample'
+  mainClass = 'com.example.proguardexample.HelloApplication'
+}
+
+javafx {
+  version = '21'
+  modules = ['javafx.controls', 'javafx.fxml']
+}
+
+dependencies {
+  implementation('org.controlsfx:controlsfx:11.1.2')
+  implementation('org.kordamp.bootstrapfx:bootstrapfx-core:0.4.0')
+
+  testImplementation("org.junit.jupiter:junit-jupiter-api:${junitVersion}")
+  testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:${junitVersion}")
+}
+
+test {
+  useJUnitPlatform()
+}
+
+task proguard(type: proguard.gradle.ProGuardTask) {
+  dependsOn prepareMergedJarsDir
+  configuration 'proguard.pro'
+
+  injars jar
+  outjars proguardOutput
+
+  libraryjars "${System.getProperty('java.home')}/jmods/java.base.jmod", jarfilter: '!**.jar', filter: '!module-info.class'
+  libraryjars configurations.runtimeClasspath.files
+}
+
+jlink {
+  imageZip = project.file("${buildDir}/distributions/app-${javafx.platform.classifier}.zip")
+  options = ['--strip-debug', '--compress', '2', '--no-header-files', '--no-man-pages']
+  launcher {
+    name = 'DikaFiles'
+  }
+}
+
+jlinkZip {
+  group = 'distribution'
+}
+
+task copyJar(type: Copy) {
+  if (proguardEnabled) {
+    dependsOn("proguard")
+    from(proguardOutput).into(jar.archiveFile.get().asFile.parentFile)
+  }
+}
+
+configurations.runtimeClasspath.canBeResolved true
+
+task completeBuild {
+  dependsOn(ordered(":clean", "copyJar", ":jpackage"))
+}
+
+def ordered(String... dependencyPaths) {
+  def dependencies = dependencyPaths.collect { tasks.getByPath(it) }
+  for (int i = 0; i < dependencies.size() - 1; i++) {
+    dependencies[i + 1].mustRunAfter(dependencies[i])
+  }
+  return dependencies
+}
